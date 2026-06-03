@@ -1,0 +1,8 @@
+.DS_Store
+.vscode
+.cache
+JuceLibraryCode
+Builds
+build
+.vs/*
+*.pickle
