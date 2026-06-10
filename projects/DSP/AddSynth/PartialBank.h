@@ -79,6 +79,9 @@ public:
     void process(float* output, unsigned int numSamples);
     float processSample();
 
+    // Sum partials into per-band accumulators (each scaled by normFactor).
+    void processSampleBands(std::array<float, kNumBands>& out);
+
     void setBaseFrequency(float freqHz);
     void setNumPartials(int numPartials);
     void setRatios(const std::array<float, kMaxPartials>& newRatios);
@@ -87,6 +90,7 @@ public:
     void setStretch(float value);         // compresses/stretches the harmonic spacing
     void setOddEvenBalance(float value);  // shifts odd vs even partials in opposite directions
     void setCoefficients(const std::array<float, kMaxPartials>& amps);
+    void setBandCrossovers(const std::array<float, kNumCrossovers>& crossoverHz);
     void randomizePhases(juce::Random& rng);
 
     int getNumActivePartials() const { return numActive; }
@@ -110,5 +114,8 @@ private:
     std::array<Partial, kMaxPartials> partials {};
     alignas(32) std::array<float, kMaxPartials> amplitudes {};
     alignas(32) std::array<float, kMaxPartials> ratios {};
+
+    std::array<float, kNumCrossovers> crossovers { 150.0f, 600.0f, 2000.0f, 6000.0f };
+    std::array<int, kMaxPartials> bandOf {};      // band index (0..kNumBands-1) per partial
 };
 }

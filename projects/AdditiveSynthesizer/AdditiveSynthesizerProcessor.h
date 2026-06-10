@@ -26,6 +26,8 @@ namespace Param
         static const juce::String Sustain { "sustain" };
         static const juce::String Release { "release" };
 
+        static const juce::String EnvMode { "env_mode" };
+
         static const juce::String FilterCutoff { "filter_cutoff" };
         static const juce::String FilterReso { "filter_reso" };
         static const juce::String FilterEnvAmount { "filter_env_amount" };
@@ -58,6 +60,8 @@ namespace Param
         static const juce::String Decay { "Decay" };
         static const juce::String Sustain { "Sustain" };
         static const juce::String Release { "Release" };
+
+        static const juce::String EnvMode { "Env Mode" };
 
         static const juce::String FilterCutoff { "Filter Cutoff" };
         static const juce::String FilterReso { "Filter Resonance" };
@@ -155,6 +159,7 @@ namespace Param
         static const juce::StringArray CoeffSourceOptions { "Manual", "Preset", "Flute", "Trumpet C", "Violin" };
         static const juce::StringArray ShapeOptions { "Sine", "Saw", "Square", "Triangle" };
         static const juce::StringArray TableOptions { "None", "Flute", "Trumpet C", "Violin" };
+        static const juce::StringArray EnvModeOptions { "Global", "Per-Band" };
         static constexpr float LevelMin { 0.0f };
         static constexpr float LevelMax { 1.0f };
         static constexpr float LevelInc { 0.001f };
@@ -169,6 +174,30 @@ namespace Param
     inline juce::String partialAmpName(int index)
     {
         return "Partial Amp " + juce::String(index + 1);
+    }
+
+    // Per-band envelope parameters. stage: 0=Attack, 1=Decay, 2=Sustain, 3=Release.
+    namespace BandStage { static const juce::StringArray ids { "attack", "decay", "sustain", "release" };
+                          static const juce::StringArray names { "Attack", "Decay", "Sustain", "Release" }; }
+
+    inline juce::String bandParamId(int band, int stage)
+    {
+        return "band" + juce::String(band) + "_" + BandStage::ids[stage];
+    }
+
+    inline juce::String bandParamName(int band, int stage)
+    {
+        return "Band " + juce::String(band + 1) + " " + BandStage::names[stage];
+    }
+
+    inline juce::String bandCrossoverId(int index)
+    {
+        return "band_crossover_" + juce::String(index);
+    }
+
+    inline juce::String bandCrossoverName(int index)
+    {
+        return "Crossover " + juce::String(index + 1);
     }
 }
 
@@ -198,6 +227,13 @@ private:
     float decayMs { 80.0f };
     float sustain { 0.7f };
     float releaseMs { 120.0f };
+
+    bool perBandEnv { false };
+    std::array<float, DSP::kNumCrossovers> bandCrossoverHz { 150.0f, 600.0f, 2000.0f, 6000.0f };
+    std::array<float, DSP::kNumBands> bandAttackMs  { 10.0f, 10.0f, 10.0f, 10.0f, 10.0f };
+    std::array<float, DSP::kNumBands> bandDecayMs   { 80.0f, 80.0f, 80.0f, 80.0f, 80.0f };
+    std::array<float, DSP::kNumBands> bandSustain   { 0.7f, 0.7f, 0.7f, 0.7f, 0.7f };
+    std::array<float, DSP::kNumBands> bandReleaseMs { 120.0f, 120.0f, 120.0f, 120.0f, 120.0f };
     float filterCutoffHz { 2000.0f };
     float filterReso { 0.7f };
     float filterEnvAmount { 0.0f };

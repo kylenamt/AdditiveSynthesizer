@@ -79,8 +79,33 @@ public:
         const float centreX = static_cast<float>(x) + static_cast<float>(width) * 0.5f;
         const float centreY = static_cast<float>(y) + static_cast<float>(height) * 0.5f;
 
+        const float angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
+
+        // Value arc geometry
+        const float arcRadius = radius;
+        const float arcThickness = radius * 0.18f;
+
+        // Background track (full sweep)
+        juce::Path track;
+        track.addCentredArc(centreX, centreY, arcRadius, arcRadius, 0.0f,
+                            rotaryStartAngle, rotaryEndAngle, true);
+        g.setColour(juce::Colour(colKnobBody));
+        g.strokePath(track, juce::PathStrokeType(arcThickness, juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
+
+        // Filled value arc (start -> current position)
+        if (sliderPosProportional > 0.0f)
+        {
+            juce::Path fill;
+            fill.addCentredArc(centreX, centreY, arcRadius, arcRadius, 0.0f,
+                               rotaryStartAngle, angle, true);
+            g.setColour(juce::Colour(colAccent));
+            g.strokePath(fill, juce::PathStrokeType(arcThickness, juce::PathStrokeType::curved,
+                                                    juce::PathStrokeType::rounded));
+        }
+
         // Filled circle body
-        const float bodyRadius = radius * 0.85f;
+        const float bodyRadius = radius * 0.72f;
         g.setColour(juce::Colour(colKnobBody));
         g.fillEllipse(centreX - bodyRadius, centreY - bodyRadius, bodyRadius * 2.0f, bodyRadius * 2.0f);
 
@@ -88,10 +113,9 @@ public:
         g.setColour(juce::Colour(colBorder));
         g.drawEllipse(centreX - bodyRadius, centreY - bodyRadius, bodyRadius * 2.0f, bodyRadius * 2.0f, 1.0f);
 
-        // Notch/line indicator
-        const float angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
-        const float notchLength = bodyRadius * 0.45f;
-        const float notchStartRadius = bodyRadius * 0.3f;
+        // Notch/line indicator pointing to current value
+        const float notchLength = bodyRadius * 0.5f;
+        const float notchStartRadius = bodyRadius * 0.35f;
 
         juce::Path notch;
         notch.addRoundedRectangle(-1.5f, -notchStartRadius - notchLength, 3.0f, notchLength, 1.5f);
@@ -99,13 +123,6 @@ public:
 
         g.setColour(juce::Colour(colAccent));
         g.fillPath(notch);
-
-        // Small dot at tip for emphasis
-        const float dotRadius = 2.5f;
-        const float dotDist = bodyRadius * 0.65f;
-        const float dotX = centreX + dotDist * std::sin(angle);
-        const float dotY = centreY - dotDist * std::cos(angle);
-        g.fillEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
     }
 
     void drawComboBox(juce::Graphics& g, int width, int height, bool isButtonDown,

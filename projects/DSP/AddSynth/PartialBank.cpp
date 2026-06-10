@@ -39,6 +39,16 @@ float PartialBank::processSample()
     return sum * normFactor;
 }
 
+void PartialBank::processSampleBands(std::array<float, kNumBands>& out)
+{
+    out.fill(0.0f);
+    for (int i = 0; i < numActive; ++i)
+        out[static_cast<size_t>(bandOf[i])] += partials[i].processSample();
+
+    for (auto& v : out)
+        v *= normFactor;
+}
+
 void PartialBank::setBaseFrequency(float freqHz)
 {
     baseFrequency = std::clamp(freqHz, 1.0f, 20000.0f);
@@ -92,6 +102,12 @@ void PartialBank::setCoefficients(const std::array<float, kMaxPartials>& amps)
     recalculateNormalization();
 }
 
+void PartialBank::setBandCrossovers(const std::array<float, kNumCrossovers>& crossoverHz)
+{
+    crossovers = crossoverHz;
+    updateFrequencies(); // reassign partials to bands
+}
+
 // randomly init phase of partials, avoids sudden spike in amplitude at start
 void PartialBank::randomizePhases(juce::Random& rng)
 {
@@ -135,7 +151,14 @@ void PartialBank::updateFrequencies()
         ratio += oddEvenBalance * oddEvenSign;
 
         const float stretchedRatio = ratio * std::sqrt(1.0f + effectiveB * ratio * ratio);// shift from perfect harmonic k*f0
-        partials[i].setFrequency(baseFrequency * std::max(0.0f, stretchedRatio));
+        const float freq = baseFrequency * std::max(0.0f, stretchedRatio);
+        partials[i].setFrequency(freq);
+
+        // assign to a frequency band (0..kNumBands-1) by comparing against crossovers
+        int band = 0;
+        while (band < kNumCrossovers && freq >= crossovers[static_cast<size_t>(band)])
+            ++band;
+        bandOf[i] = band;
     }
 }
 

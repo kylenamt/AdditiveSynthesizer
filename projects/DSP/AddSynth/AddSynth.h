@@ -26,6 +26,14 @@ struct SynthParams
     float sustain { 0.7f };
     float releaseMs { 120.0f };
 
+    // per-band amplitude envelopes (used when perBandEnv == true)
+    bool perBandEnv { false };
+    std::array<float, kNumCrossovers> bandCrossoverHz { 150.0f, 600.0f, 2000.0f, 6000.0f };
+    std::array<float, kNumBands> bandAttackMs  { 10.0f, 10.0f, 10.0f, 10.0f, 10.0f };
+    std::array<float, kNumBands> bandDecayMs   { 80.0f, 80.0f, 80.0f, 80.0f, 80.0f };
+    std::array<float, kNumBands> bandSustain   { 0.7f, 0.7f, 0.7f, 0.7f, 0.7f };
+    std::array<float, kNumBands> bandReleaseMs { 120.0f, 120.0f, 120.0f, 120.0f, 120.0f };
+
     float filterCutoffHz { 2000.0f };
     float filterResonance { 0.7f };
     float filterEnvAmount { 0.0f };
@@ -81,6 +89,8 @@ private:
     PartialBank partialBank;
     DSP::EnvelopeGenerator envGen;
     DSP::EnvelopeGenerator filterGen;
+    std::array<DSP::EnvelopeGenerator, kNumBands> bandEnv;
+    bool perBandEnv { false };
     DSP::StateVariableFilter filter;
 
     float filterCutoffHz { 2000.0f };
