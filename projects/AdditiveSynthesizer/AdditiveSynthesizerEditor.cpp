@@ -6,18 +6,81 @@
 #include <array>
 #include <vector>
 
-static constexpr int COLUMN_WIDTH { 200 };
-static constexpr int COLUMN_GAP { 0 };
-static constexpr int COLUMN_COUNT { 3 };
-static constexpr int WIDTH { COLUMN_WIDTH * COLUMN_COUNT + COLUMN_GAP * (COLUMN_COUNT - 1) };
 static constexpr int PARAM_HEIGHT { 70 };
-static constexpr int SECTION_GAP { 12 };
+static constexpr int HEADER_HEIGHT { 28 };
+static constexpr int ACCORDION_WIDTH { 380 };
+static constexpr int COLUMN_GAP { 12 };
+static constexpr int MARGIN { 12 };
+static constexpr int TOGGLE_HEIGHT { 26 };
 static constexpr int PARTIAL_KNOB_ROWS { 2 };
 static constexpr int PARTIAL_KNOB_COLS { 5 };
-static constexpr int PARTIAL_SECTION_HEIGHT { 2 * 90 };
+static constexpr int PARTIAL_SECTION_HEIGHT { 200 };
 static constexpr int PARTIAL_LABEL_HEIGHT { 10 };
 static constexpr int PARTIAL_KNOB_PADDING { 4 };
 static constexpr int PARTIAL_KNOB_COUNT { PARTIAL_KNOB_ROWS * PARTIAL_KNOB_COLS };
+
+// Clickable accordion section header with a disclosure triangle.
+class SectionHeader final : public juce::Component
+{
+public:
+    SectionHeader(const juce::String& titleText) : title(titleText) {}
+
+    std::function<void()> onToggle;
+
+    void setExpanded(bool shouldBeExpanded)
+    {
+        expanded = shouldBeExpanded;
+        repaint();
+    }
+
+    bool isExpanded() const { return expanded; }
+
+    void paint(juce::Graphics& g) override
+    {
+        auto bounds = getLocalBounds().toFloat();
+
+        g.setColour(juce::Colour(CustomLookAndFeel::colSurface));
+        g.fillRect(bounds);
+        g.setColour(juce::Colour(CustomLookAndFeel::colBorder));
+        g.drawRect(bounds, 1.0f);
+
+        // Disclosure triangle on the left
+        const float cx = bounds.getX() + 14.0f;
+        const float cy = bounds.getCentreY();
+        const float s = 4.0f;
+        juce::Path tri;
+        if (expanded)
+            tri.addTriangle(cx - s, cy - s, cx + s, cy - s, cx, cy + s); // ▼
+        else
+            tri.addTriangle(cx - s, cy - s, cx - s, cy + s, cx + s, cy); // ▶
+        g.setColour(juce::Colour(isMouseOver ? CustomLookAndFeel::colAccentHover
+                                             : CustomLookAndFeel::colAccent));
+        g.fillPath(tri);
+
+        // Title
+        auto textBounds = getLocalBounds().withTrimmedLeft(28);
+        g.setColour(juce::Colour(isMouseOver ? CustomLookAndFeel::colTextPrimary
+                                             : CustomLookAndFeel::colTextSecondary));
+        g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+        g.drawText(title, textBounds, juce::Justification::centredLeft);
+    }
+
+    void mouseUp(const juce::MouseEvent& e) override
+    {
+        if (getLocalBounds().contains(e.getPosition()) && onToggle)
+            onToggle();
+    }
+
+    void mouseEnter(const juce::MouseEvent&) override { isMouseOver = true; repaint(); }
+    void mouseExit(const juce::MouseEvent&) override { isMouseOver = false; repaint(); }
+
+private:
+    juce::String title;
+    bool expanded { false };
+    bool isMouseOver { false };
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SectionHeader)
+};
 
 class PartialKnobArray final : public juce::Component
 {
@@ -125,11 +188,15 @@ AdditiveSynthesizerEditor::AdditiveSynthesizerEditor(AdditiveSynthesizerProcesso
     filterEnvEditor(processor.getParameterManager(), PARAM_HEIGHT, makeFilterEnvParams()),
     filterLfoEditor(processor.getParameterManager(), PARAM_HEIGHT, makeFilterLfoParams())
 {
-    addAndMakeVisible(mainEditor);
-    addAndMakeVisible(spectrumEditor);
-    addAndMakeVisible(envEditor);
-    addAndMakeVisible(filterEnvEditor);
-    addAndMakeVisible(filterLfoEditor);
+    setLookAndFeel(&customLookAndFeel);
+
+    // Accordion of collapsible parameter sections
+    addAndMakeVisible(concertina);
+    addSection(mainEditor,      headerMain,      "MAIN",          static_cast<int>(makeMainParams().size()),      true);
+    addSection(spectrumEditor,  headerSpectrum,  "SPECTRUM",      static_cast<int>(makeSpectrumParams().size()),  false);
+    addSection(envEditor,       headerEnv,       "ENVELOPE",      static_cast<int>(makeEnvParams().size()),       false);
+    addSection(filterEnvEditor, headerFilterEnv, "FILTER ENV",    static_cast<int>(makeFilterEnvParams().size()), false);
+    addSection(filterLfoEditor, headerFilterLfo, "FILTER + LFO",  static_cast<int>(makeFilterLfoParams().size()), false);
 
     // waveform display
     addAndMakeVisible(waveformDisplay);
@@ -140,10 +207,12 @@ AdditiveSynthesizerEditor::AdditiveSynthesizerEditor(AdditiveSynthesizerProcesso
     partialKnobs = std::make_unique<PartialKnobArray>(processor.getParameterManager());
     addAndMakeVisible(*partialKnobs);
 
-    const auto topRows = std::max({ makeMainParams().size(), makeSpectrumParams().size(), makeEnvParams().size(), makeFilterEnvParams().size(), makeFilterLfoParams().size() });
-    const auto height = static_cast<int>(topRows) * PARAM_HEIGHT + SECTION_GAP + PARTIAL_SECTION_HEIGHT;
-    // five columns: main | spectrum | env | filter env | filter+lfo
-    setSize(COLUMN_WIDTH * 5 + COLUMN_GAP * 4, height);
+    // Window tall enough to fully show the largest section plus the other collapsed headers.
+    const int largestSection = static_cast<int>(std::max({ makeMainParams().size(), makeSpectrumParams().size(), makeEnvParams().size(), makeFilterEnvParams().size(), makeFilterLfoParams().size() }));
+    const int accordionHeight = largestSection * PARAM_HEIGHT + 5 * HEADER_HEIGHT;
+    const int rightHeight = TOGGLE_HEIGHT + PARTIAL_SECTION_HEIGHT + 200; // display + knobs
+    const int contentHeight = std::max(accordionHeight, rightHeight);
+    setSize(MARGIN * 2 + ACCORDION_WIDTH + COLUMN_GAP + 430, contentHeight + MARGIN * 2);
 
     // initialize displays from current processor state and start timer to poll updates
     waveformDisplay.updateCoefficients(processor.getBlendedBuffer().data(), processor.getRatios().data(), processor.getNumPartials());
@@ -152,6 +221,37 @@ AdditiveSynthesizerEditor::AdditiveSynthesizerEditor(AdditiveSynthesizerProcesso
     // set initial visibility: waveform shown by default, frequency hidden
     frequencyDisplay.setVisible(viewToggle.getToggleState());
     waveformDisplay.setVisible(!viewToggle.getToggleState());
+}
+
+void AdditiveSynthesizerEditor::addSection(mrta::GenericParameterEditor& editor,
+                                           std::unique_ptr<SectionHeader>& header,
+                                           const juce::String& title, int paramCount,
+                                           bool startExpanded)
+{
+    const int contentHeight = paramCount * PARAM_HEIGHT;
+
+    header = std::make_unique<SectionHeader>(title);
+
+    concertina.addPanel(-1, &editor, false);
+    concertina.setPanelHeaderSize(&editor, HEADER_HEIGHT);
+    concertina.setCustomPanelHeader(&editor, header.get(), false);
+    concertina.setMaximumPanelSize(&editor, contentHeight);
+
+    auto* headerPtr = header.get();
+    header->onToggle = [this, editor = &editor, headerPtr, contentHeight]
+    {
+        togglePanel(editor, headerPtr, contentHeight);
+    };
+
+    header->setExpanded(startExpanded);
+    concertina.setPanelSize(&editor, startExpanded ? contentHeight : 0, false);
+}
+
+void AdditiveSynthesizerEditor::togglePanel(juce::Component* panel, SectionHeader* header, int contentHeight)
+{
+    const bool nowExpanded = !header->isExpanded();
+    header->setExpanded(nowExpanded);
+    concertina.setPanelSize(panel, nowExpanded ? contentHeight : 0, true);
 }
 
 void AdditiveSynthesizerEditor::timerCallback()
@@ -171,55 +271,38 @@ void AdditiveSynthesizerEditor::viewToggleChanged()
     repaint();
 }
 
-AdditiveSynthesizerEditor::~AdditiveSynthesizerEditor() = default;
-
-void AdditiveSynthesizerEditor::paint(juce::Graphics&)
+AdditiveSynthesizerEditor::~AdditiveSynthesizerEditor()
 {
+    setLookAndFeel(nullptr);
+}
+
+void AdditiveSynthesizerEditor::paint(juce::Graphics& g)
+{
+    g.fillAll(juce::Colour(CustomLookAndFeel::colBackground));
 }
 
 void AdditiveSynthesizerEditor::resized()
 {
-    auto bounds = getLocalBounds();
-    const int topRows = static_cast<int>(std::max({ makeMainParams().size(), makeSpectrumParams().size(), makeEnvParams().size(), makeFilterEnvParams().size(), makeFilterLfoParams().size() }));
-    const int topHeight = topRows * PARAM_HEIGHT;
+    auto bounds = getLocalBounds().reduced(MARGIN);
 
-    auto top = bounds.removeFromTop(topHeight);
-    bounds.removeFromTop(SECTION_GAP);
+    // Left: accordion of collapsible parameter sections
+    auto left = bounds.removeFromLeft(ACCORDION_WIDTH);
+    concertina.setBounds(left);
+
+    bounds.removeFromLeft(COLUMN_GAP);
+
+    // Right: always-visible display + partial knobs
+    auto right = bounds;
+
+    // Partial knobs docked at the bottom
     if (partialKnobs)
-    {
-    auto partialArea = bounds.removeFromTop(PARTIAL_SECTION_HEIGHT);
-    // split partial area: left for knobs, right for waveform + toggle
-    const int wfWidth = std::max(220, partialArea.getWidth() / 3);
-    auto wfArea = partialArea.removeFromRight(wfWidth);
-    // Reserve top of wfArea for toggle
-    auto toggleArea = wfArea.removeFromTop(24);
-    viewToggle.setBounds(toggleArea.reduced(4));
-    partialKnobs->setBounds(partialArea);
-    // place displays in remaining wfArea
-    waveformDisplay.setBounds(wfArea);
-    frequencyDisplay.setBounds(wfArea);
-    }
+        partialKnobs->setBounds(right.removeFromBottom(PARTIAL_SECTION_HEIGHT));
 
-    // layout five columns: main | spectrum | env | filter env | filter+lfo
-    const int columns = 5;
-    const int totalGap = COLUMN_GAP * (columns - 1);
-    const int colWidth = (top.getWidth() - totalGap) / columns;
+    // Toggle above the display
+    auto toggleArea = right.removeFromTop(TOGGLE_HEIGHT);
+    viewToggle.setBounds(toggleArea.reduced(4, 2));
 
-    auto col = top.removeFromLeft(colWidth);
-    mainEditor.setBounds(col);
-
-    top.removeFromLeft(COLUMN_GAP);
-    col = top.removeFromLeft(colWidth);
-    spectrumEditor.setBounds(col);
-
-    top.removeFromLeft(COLUMN_GAP);
-    col = top.removeFromLeft(colWidth);
-    envEditor.setBounds(col);
-
-    top.removeFromLeft(COLUMN_GAP);
-    col = top.removeFromLeft(colWidth);
-    filterEnvEditor.setBounds(col);
-
-    top.removeFromLeft(COLUMN_GAP);
-    filterLfoEditor.setBounds(top);
+    auto displayArea = right.reduced(2);
+    waveformDisplay.setBounds(displayArea);
+    frequencyDisplay.setBounds(displayArea);
 }
