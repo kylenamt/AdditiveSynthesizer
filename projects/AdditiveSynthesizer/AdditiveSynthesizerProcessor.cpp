@@ -12,7 +12,7 @@
 static const std::vector<mrta::ParameterInfo> paramVector = []()
 {
     std::vector<mrta::ParameterInfo> params;
-    params.reserve(24 + DSP::kManualPartials);
+    params.reserve(24 + DSP::kManualPartials + 1 + DSP::kNumCrossovers + DSP::kNumBands * 4);
 
     params.emplace_back(Param::ID::NumPartials, Param::Name::NumPartials, "",
                         32.0f, Param::Range::NumPartialsMin, Param::Range::NumPartialsMax,
@@ -51,6 +51,28 @@ static const std::vector<mrta::ParameterInfo> paramVector = []()
     params.emplace_back(Param::ID::Release, Param::Name::Release, Param::Unit::Ms,
                         120.0f, Param::Range::TimeMin, Param::Range::TimeMax,
                         Param::Range::TimeInc, Param::Range::TimeSkw);
+
+    // Per-band envelope: mode toggle, crossover frequencies, and per-band ADSR.
+    params.emplace_back(Param::ID::EnvMode, Param::Name::EnvMode, Param::Range::EnvModeOptions, 0);
+    {
+        static const float crossoverDefaults[DSP::kNumCrossovers] { 150.0f, 600.0f, 2000.0f, 6000.0f };
+        for (int i = 0; i < DSP::kNumCrossovers; ++i)
+            params.emplace_back(Param::bandCrossoverId(i), Param::bandCrossoverName(i), Param::Unit::Hz,
+                                crossoverDefaults[i], Param::Range::FilterCutoffMin, Param::Range::FilterCutoffMax,
+                                Param::Range::FilterCutoffInc, Param::Range::FilterCutoffSkw);
+    }
+    for (int b = 0; b < DSP::kNumBands; ++b)
+    {
+        params.emplace_back(Param::bandParamId(b, 0), Param::bandParamName(b, 0), Param::Unit::Ms,
+                            10.0f, Param::Range::TimeMin, Param::Range::TimeMax, Param::Range::TimeInc, Param::Range::TimeSkw);
+        params.emplace_back(Param::bandParamId(b, 1), Param::bandParamName(b, 1), Param::Unit::Ms,
+                            80.0f, Param::Range::TimeMin, Param::Range::TimeMax, Param::Range::TimeInc, Param::Range::TimeSkw);
+        params.emplace_back(Param::bandParamId(b, 2), Param::bandParamName(b, 2), "",
+                            0.7f, Param::Range::SustainMin, Param::Range::SustainMax, Param::Range::SustainInc, Param::Range::SustainSkw);
+        params.emplace_back(Param::bandParamId(b, 3), Param::bandParamName(b, 3), Param::Unit::Ms,
+                            120.0f, Param::Range::TimeMin, Param::Range::TimeMax, Param::Range::TimeInc, Param::Range::TimeSkw);
+    }
+
     params.emplace_back(Param::ID::FilterCutoff, Param::Name::FilterCutoff, Param::Unit::Hz,
                         2000.0f, Param::Range::FilterCutoffMin, Param::Range::FilterCutoffMax,
                         Param::Range::FilterCutoffInc, Param::Range::FilterCutoffSkw);
@@ -99,8 +121,8 @@ AdditiveSynthesizerProcessor::AdditiveSynthesizerProcessor() :
     for (int i = 0; i < NumVoices; ++i)
         synth.addVoice(new DSP::AdditiveVoice());
 
-    // Match Synth: don't steal still-sounding voices (avoids mid-note resets/clicks).
-    synth.setNoteStealingEnabled(false);
+    // Steal the quietest voice when all are busy so fast playing never drops notes.
+    synth.setNoteStealingEnabled(true);
 
     for (int i = 0; i < DSP::kMaxPartials; ++i)
     {
@@ -160,6 +182,19 @@ AdditiveSynthesizerProcessor::AdditiveSynthesizerProcessor() :
     registerParameterCallback(Param::ID::Decay,[this] (float value, bool){decayMs = value;});
     registerParameterCallback(Param::ID::Sustain,[this] (float value, bool){sustain = value;});
     registerParameterCallback(Param::ID::Release,[this] (float value, bool){releaseMs = value;});
+
+    registerParameterCallback(Param::ID::EnvMode,[this] (float value, bool){perBandEnv = (static_cast<int>(std::round(value)) == 1);});
+    for (int i = 0; i < DSP::kNumCrossovers; ++i)
+        registerParameterCallback(Param::bandCrossoverId(i),
+            [this, i] (float value, bool){ bandCrossoverHz[static_cast<size_t>(i)] = value; });
+    for (int b = 0; b < DSP::kNumBands; ++b)
+    {
+        registerParameterCallback(Param::bandParamId(b, 0), [this, b] (float v, bool){ bandAttackMs[static_cast<size_t>(b)]  = v; });
+        registerParameterCallback(Param::bandParamId(b, 1), [this, b] (float v, bool){ bandDecayMs[static_cast<size_t>(b)]   = v; });
+        registerParameterCallback(Param::bandParamId(b, 2), [this, b] (float v, bool){ bandSustain[static_cast<size_t>(b)]   = v; });
+        registerParameterCallback(Param::bandParamId(b, 3), [this, b] (float v, bool){ bandReleaseMs[static_cast<size_t>(b)] = v; });
+    }
+
     registerParameterCallback(Param::ID::FilterCutoff,[this] (float value, bool){filterCutoffHz = value;});
     registerParameterCallback(Param::ID::FilterReso,[this] (float value, bool){filterReso = value;});
     registerParameterCallback(Param::ID::FilterEnvAmount,[this] (float value, bool){filterEnvAmount = value;});
@@ -234,6 +269,12 @@ void AdditiveSynthesizerProcessor::updateSynthParams()
     synthParams.decayMs = decayMs;
     synthParams.sustain = sustain;
     synthParams.releaseMs = releaseMs;
+    synthParams.perBandEnv = perBandEnv;
+    synthParams.bandCrossoverHz = bandCrossoverHz;
+    synthParams.bandAttackMs = bandAttackMs;
+    synthParams.bandDecayMs = bandDecayMs;
+    synthParams.bandSustain = bandSustain;
+    synthParams.bandReleaseMs = bandReleaseMs;
     synthParams.filterCutoffHz = filterCutoffHz;
     synthParams.filterResonance = filterReso;
     synthParams.filterEnvAmount = filterEnvAmount;
