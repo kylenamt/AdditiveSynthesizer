@@ -33,21 +33,30 @@ jobs:
       - name: Build all formats
         run: cmake --build build --target additive_synth_All --config Release --parallel 4
 
-      # JUCE puts artefacts under different folders depending on the generator:
-      #   macOS (Unix Makefiles, single-config): build/additive_synth_artefacts/<FORMAT>/
-      #   Windows (Visual Studio, multi-config):  build/additive_synth_artefacts/Release/<FORMAT>/
+      # The artefact folder layout differs by CMake generator (some nest outputs under a
+      # Release/ subfolder), so collect the built bundles by name wherever they landed.
       - name: Package (macOS)
         if: runner.os == 'macOS'
         run: |
-          cd build/additive_synth_artefacts
-          zip -r "$GITHUB_WORKSPACE/AdditiveSynthesizer-macOS.zip" VST3 AU Standalone
+          mkdir -p dist
+          find build/additive_synth_artefacts \
+            \( -name '*.vst3' -o -name '*.component' -o -name '*.app' \) \
+            -prune -exec cp -R {} dist/ \;
+          echo "Collected:" && ls -la dist
+          cd dist
+          zip -r "$GITHUB_WORKSPACE/AdditiveSynthesizer-macOS.zip" .
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $base = "build/additive_synth_artefacts/Release"
-          Compress-Archive -Path "$base/VST3","$base/Standalone" -DestinationPath AdditiveSynthesizer-Windows.zip
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Get-ChildItem build/additive_synth_artefacts -Recurse -Directory -Filter *.vst3 |
+            ForEach-Object { Copy-Item $_.FullName dist -Recurse }
+          Get-ChildItem build/additive_synth_artefacts -Recurse -File -Filter *.exe |
+            ForEach-Object { Copy-Item $_.FullName dist }
+          Write-Host "Collected:"; Get-ChildItem dist
+          Compress-Archive -Path dist/* -DestinationPath AdditiveSynthesizer-Windows.zip
 
       # Downloadable from the Actions run page on every build (kept ~90 days).
       - name: Upload build artifact
